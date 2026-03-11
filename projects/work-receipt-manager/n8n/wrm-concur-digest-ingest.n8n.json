@@ -1,0 +1,142 @@
+{
+  "name": "WRM — Concur Digest Ingestion (Outlook → WRM API) — Move to Finance/Receipts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [-900, 260]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 50,
+        "output": "fields",
+        "fields": [
+          "body",
+          "from",
+          "sender",
+          "subject",
+          "receivedDateTime",
+          "internetMessageId",
+          "id",
+          "hasAttachments"
+        ],
+        "filtersUI": {
+          "values": {
+            "filters": {
+              "custom": "=(from/emailAddress/address eq 'autonotifications@concursolutions.com') and contains(subject,'Company Card Notification')"
+            }
+          }
+        },
+        "options": { "downloadAttachments": false }
+      },
+      "id": "outlook-get-digests",
+      "name": "Outlook — Get Concur Digests",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [-620, 260],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": { "name": "SR@abhms" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const subj = ($json.subject || '').toLowerCase();\nlet cardLast4 = null;\nif (subj.includes('abhms it card')) cardLast4 = '1007';\nelse if (subj.includes('saeed richardson')) cardLast4 = '2004';\n\nreturn [{ json: { ...$json, cardLast4, _wrm_map_note: cardLast4 ? null : 'Could not map subject to card last4' } }];"
+      },
+      "id": "code-map-card",
+      "name": "Map cardLast4 from subject",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-360, 260]
+    },
+    {
+      "parameters": {
+        "jsCode": "function htmlToText(html) {\n  if (!html) return '';\n  return String(html)\n    .replace(/<style[\\s\\S]*?<\\/style>/gi, '')\n    .replace(/<script[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<br\\s*\\/?>/gi, '\\n')\n    .replace(/<\\/p>/gi, '\\n')\n    .replace(/<[^>]+>/g, ' ')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/\\s+\\n/g, '\\n')\n    .replace(/\\n\\s+/g, '\\n')\n    .replace(/[ \\t]{2,}/g, ' ')\n    .trim();\n}\n\nconst body = $json.body || {};\nconst content = body.content || '';\nconst contentType = (body.contentType || '').toLowerCase();\nconst digestText = contentType === 'html' ? htmlToText(content) : String(content || '');\n\nreturn [{ json: { ...$json, digestText } }];"
+      },
+      "id": "code-html-to-text",
+      "name": "Digest body → digestText",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ ($env.WRM_API_ORIGIN || 'http://100.88.120.37:8787') + '/api/v1/concur/digest:ingest' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={ \"cardLast4\": $json.cardLast4, \"digestMessageId\": $json.internetMessageId || $json.id, \"digestText\": $json.digestText }",
+        "options": { "timeout": 60000 }
+      },
+      "id": "http-post-ingest",
+      "name": "WRM API — digest:ingest",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [140, 260]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "messageId": "={{ $json.id }}",
+        "updateFields": { "isRead": true, "categories": ["wrm_ingested"] }
+      },
+      "id": "outlook-mark-processed",
+      "name": "Outlook — Mark processed (read + category)",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [400, 260],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": { "name": "SR@abhms" }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "messageId": "={{ $json.id }}",
+        "folderId": "AAMkADk0M2NkMGQzLTBlYmYtNDRkNy1iYzc2LTljMzJhZGY1MmQ5YwAuAAAAAAAkNjmQJaULQroxtr7H9bakAQAP0iVPli6MT4NvM1hRXvoJAAALJ9KxAAA="
+      },
+      "id": "outlook-move-receipts-finance",
+      "name": "Outlook — Move to Finance/Receipts",
+      "type": "n8n-nodes-base.microsoftOutlook",
+      "typeVersion": 2,
+      "position": [660, 260],
+      "credentials": {
+        "microsoftOutlookOAuth2Api": { "name": "SR@abhms" }
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": {
+      "main": [[{ "node": "Outlook — Get Concur Digests", "type": "main", "index": 0 }]]
+    },
+    "Outlook — Get Concur Digests": {
+      "main": [[{ "node": "Map cardLast4 from subject", "type": "main", "index": 0 }]]
+    },
+    "Map cardLast4 from subject": {
+      "main": [[{ "node": "Digest body → digestText", "type": "main", "index": 0 }]]
+    },
+    "Digest body → digestText": {
+      "main": [[{ "node": "WRM API — digest:ingest", "type": "main", "index": 0 }]]
+    },
+    "WRM API — digest:ingest": {
+      "main": [[{ "node": "Outlook — Mark processed (read + category)", "type": "main", "index": 0 }]]
+    },
+    "Outlook — Mark processed (read + category)": {
+      "main": [[{ "node": "Outlook — Move to Finance/Receipts", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1", "saveExecutionProgress": true }
+}

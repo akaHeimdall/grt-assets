@@ -1,0 +1,155 @@
+{
+  "name": "WRM MCP",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "bearerAuth",
+        "path": "wrm"
+      },
+      "type": "@n8n/n8n-nodes-langchain.mcpTrigger",
+      "typeVersion": 2,
+      "position": [-600, 200],
+      "id": "mcp-trigger-wrm",
+      "name": "MCP Server Trigger",
+      "webhookId": "REPLACE_ON_IMPORT",
+      "credentials": {
+        "httpBearerAuth": {
+          "name": "Bearer Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "output": "raw",
+        "filtersUI": {
+          "values": {
+            "filters": {
+              "readStatus": "unread"
+            }
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTool",
+      "typeVersion": 2,
+      "position": [-260, 60],
+      "id": "tool-get-unprocessed",
+      "name": "wrm.outlook_get_unread",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "name": "SR@abhms"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "messageId": "={{ /* tool param */ $fromAI('message_id', '', 'string') }}",
+        "folderId": "AAMkADk0M2NkMGQzLTBlYmYtNDRkNy1iYzc2LTljMzJhZGY1MmQ5YwAuAAAAAAAkNjmQJaULQroxtr7H9bakAQAP0iVPli6MT4NvM1hRXvoJAATtRhQ7AAA=",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTool",
+      "typeVersion": 2,
+      "position": [-260, 200],
+      "id": "tool-move-to-concur",
+      "name": "wrm.outlook_move_to_concur_reports",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "name": "SR@abhms"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "messageId": "={{ /* tool param */ $fromAI('message_id', '', 'string') }}",
+        "updateFields": {
+          "isRead": true,
+          "categories": ["wrm_ingested"]
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTool",
+      "typeVersion": 2,
+      "position": [-260, 340],
+      "id": "tool-mark-processed",
+      "name": "wrm.outlook_mark_processed",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "name": "SR@abhms"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "resource": "folder",
+        "returnAll": true,
+        "options": {
+          "includeChildFolders": true
+        }
+      },
+      "type": "n8n-nodes-base.microsoftOutlookTool",
+      "typeVersion": 2,
+      "position": [-260, 480],
+      "id": "tool-get-folders",
+      "name": "wrm.outlook_get_folders",
+      "credentials": {
+        "microsoftOutlookOAuth2Api": {
+          "name": "SR@abhms"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "wrm.outlook_get_unread": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wrm.outlook_move_to_concur_reports": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wrm.outlook_mark_processed": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "wrm.outlook_get_folders": {
+      "ai_tool": [
+        [
+          {
+            "node": "MCP Server Trigger",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  }
+}
