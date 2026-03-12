@@ -1,0 +1,89 @@
+{
+  "name": "Search params for str@gmail",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "searchgmail",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "a1b2c3d4-0001-0001-0001-000000000001"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Gmail search query from WRM webhook params\n// Input: { dateFrom, dateTo, senderContains, subjectContains, limit }\nconst body = $input.first().json.body || $input.first().json;\n\nconst dateFrom = body.dateFrom;\nconst dateTo   = body.dateTo;\nconst sender   = (body.senderContains  || '').trim();\nconst subject  = (body.subjectContains || '').trim();\nconst limit    = Math.min(parseInt(body.limit, 10) || 10, 10);\n\nfunction toGmailDate(iso) {\n  const d = new Date(iso);\n  return `${d.getUTCFullYear()}/${String(d.getUTCMonth()+1).padStart(2,'0')}/${String(d.getUTCDate()).padStart(2,'0')}`;\n}\n\n// Gmail 'before' is exclusive — bump +1 day to include the full dateTo day\nconst exclusiveTo = new Date(dateTo);\nexclusiveTo.setUTCDate(exclusiveTo.getUTCDate() + 1);\n\nconst parts = [\n  `after:${toGmailDate(dateFrom)}`,\n  `before:${toGmailDate(exclusiveTo.toISOString())}`,\n];\nif (sender)  parts.push(`from:${sender}`);\nif (subject) parts.push(`subject:${subject}`);\n\nreturn [{ json: { searchQuery: parts.join(' '), limit } }];"
+      },
+      "id": "a1b2c3d4-0002-0002-0002-000000000002",
+      "name": "Build Gmail query",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": "={{ $json.limit }}",
+        "filters": {
+          "q": "={{ $json.searchQuery }}"
+        },
+        "options": {
+          "format": "simple"
+        }
+      },
+      "id": "a1b2c3d4-0003-0003-0003-000000000003",
+      "name": "Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_WITH_YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "str@gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Normalize Gmail output to match Outlook/Graph API shape\n// so WRM's callWebhook() handles both identically.\nreturn $input.all().map(item => {\n  const m = item.json;\n\n  // Parse 'Name <email@domain.com>' or plain 'email@domain.com'\n  const fromStr = m.from || '';\n  const match = fromStr.match(/^(.+?)\\s*<([^>]+)>\\s*$/);\n  const fromName    = match ? match[1].trim() : fromStr;\n  const fromAddress = match ? match[2].trim() : fromStr;\n\n  // Prefer textPlain; fall back to textHtml\n  const bodyContent = m.textPlain || m.textHtml || '';\n\n  return {\n    json: {\n      // Prefix 'gmail:' to namespace Gmail IDs away from Outlook IDs\n      internetMessageId: `gmail:${m.id}`,\n      subject:           m.subject           || null,\n      receivedDateTime:  m.date              || null,\n      hasAttachments:    Array.isArray(m.attachments) && m.attachments.length > 0,\n      body: {\n        contentType: m.textPlain ? 'text' : 'html',\n        content:     bodyContent,\n      },\n      from: {\n        emailAddress: {\n          name:    fromName || fromAddress,\n          address: fromAddress,\n        },\n      },\n    },\n  };\n});"
+      },
+      "id": "a1b2c3d4-0004-0004-0004-000000000004",
+      "name": "Normalize to Outlook shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [{ "node": "Build Gmail query", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Gmail query": {
+      "main": [
+        [{ "node": "Gmail", "type": "main", "index": 0 }]
+      ]
+    },
+    "Gmail": {
+      "main": [
+        [{ "node": "Normalize to Outlook shape", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "wrm-gmail-search"
+  }
+}
